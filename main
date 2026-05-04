@@ -1,15 +1,15 @@
-#https://api.telegram.org/bot<8701765620:AAEYuEy6VQ4q85cVdc_VTDXGIqQiJM8ivP0>/setwebhook?url=https://betplus-x.onrender.com/webhook/<8701765620:AAEYuEy6VQ4q85cVdc_VTDXGIqQiJM8ivP0>
-
 import os
 import sqlite3
 from flask import Flask, request, render_template_string
 from telegram import Bot
+import random
+import string
 
 app = Flask(__name__)
 
 # ================== CONFIG ==================
-TOKEN = os.getenv("8701765620:AAEYuEy6VQ4q85cVdc_VTDXGIqQiJM8ivP0")  # set this in environment
-TELEGRAM_API_URL = #"https://api.telegram.org/bot(TOKEN)/sendMessage"
+BOT_TOKEN = "8701765620:AAEYuEy6VQ4q85cVdc_VTDXGIqQiJM8ivP0"  # ⚠️ Exposed (not recommended)
+bot = Bot(token=BOT_TOKEN)
 
 # ================== HTML ==================
 HTML = """
@@ -29,7 +29,7 @@ HTML = """
 </html>
 """
 
-# ================== DATABASE INIT ==================
+# ================== DATABASE ==================
 def init_db():
     with sqlite3.connect("database.db") as conn:
         c = conn.cursor()
@@ -54,16 +54,58 @@ def home():
         with sqlite3.connect("database.db") as conn:
             c = conn.cursor()
 
-            # Check if code exists
             c.execute("SELECT used FROM codes WHERE code=?", (code,))
             res = c.fetchone()
 
             if res and res[0] == 0:
-                # Mark code as used
                 c.execute("UPDATE codes SET used=1 WHERE code=?", (code,))
                 conn.commit()
                 msg = "✅ Access Granted"
             else:
+                msg = "❌ Invalid or Already Used Code"
+
+    return render_template_string(HTML, msg=msg)
+
+# ================== TELEGRAM WEBHOOK ==================
+@app.route(f"/bot{BOT_TOKEN}", methods=["POST"])
+def telegram_webhook():
+    data = request.get_json()
+
+    if data and "message" in data:
+        chat_id = data["message"]["chat"]["id"]
+        text = data["message"].get("text", "")
+
+        if text == "/start":
+            bot.send_message(chat_id=chat_id, text="Welcome! Send /code to get access code")
+
+        elif text == "/code":
+            code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+
+            with sqlite3.connect("database.db") as conn:
+                c = conn.cursor()
+                c.execute("INSERT INTO codes (code, used) VALUES (?, 0)", (code,))
+                conn.commit()
+
+            bot.send_message(chat_id=chat_id, text=f"🎟 Your Code: {code}")
+
+        else:
+            bot.send_message(chat_id=chat_id, text="Unknown command")
+
+    return "OK"
+
+# ================== SET WEBHOOK ==================
+@app.route("/set_webhook")
+def set_webhook():
+    url = os.getenv("RENDER_EXTERNAL_URL")
+
+    webhook_url = f"{url}/bot{BOT_TOKEN}"
+    bot.set_webhook(webhook_url)
+
+    return f"Webhook set to {webhook_url}"
+
+# ================== RUN ==================
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))            else:
                 msg = "❌ Invalid or Already Used Code"
 
     return render_template_string(HTML, msg=msg)
